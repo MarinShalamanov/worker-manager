@@ -105,7 +105,7 @@ public class WorkerManager
 
 		runInstancesRequest
 			.withImageId(configuration.getImageId())
-			.withInstanceType(InstanceType.T2Micro)
+			.withInstanceType(configuration.getInstanceType())
 			.withMinCount(1)
 			.withMaxCount(numNewInstances)
 			.withKeyName(configuration.getNewInstanceKeyName())
@@ -264,7 +264,8 @@ public class WorkerManager
     			.setSecurityGroup("default")
     			.setNewInstanceKeyName("test")
     			.setWorkerRegistryEndpoint("http://localhost:8889/workers")
-    			.setRegisterInstances(true);
+    			.setRegisterInstances(true)
+    			.setInstanceType(InstanceType.T2Micro);
     	
     	WorkerManager manager = new WorkerManager(configuration);
     	manager.ensureNumberOfInstances(1);

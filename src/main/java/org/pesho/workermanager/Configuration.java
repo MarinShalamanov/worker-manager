@@ -1,5 +1,7 @@
 package org.pesho.workermanager;
 
+import com.amazonaws.services.ec2.model.InstanceType;
+
 public class Configuration {
 	
 	private boolean registerInstances = true;
@@ -11,6 +13,8 @@ public class Configuration {
 	private String imageId;
 	
 	private String securityGroup;
+	
+	private InstanceType instanceType;
 
 	public Configuration() {
 	}
@@ -57,6 +61,15 @@ public class Configuration {
 
 	public Configuration setSecurityGroup(String securityGroup) {
 		this.securityGroup = securityGroup;
+		return this;
+	}
+
+	public InstanceType getInstanceType() {
+		return instanceType;
+	}
+
+	public Configuration setInstanceType(InstanceType instanceType) {
+		this.instanceType = instanceType;
 		return this;
 	}
 }
