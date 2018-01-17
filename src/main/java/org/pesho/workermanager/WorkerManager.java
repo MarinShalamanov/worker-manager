@@ -2,14 +2,9 @@ package org.pesho.workermanager;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
-
-import org.apache.http.HttpResponse;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpDelete;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.impl.client.HttpClients;
 
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
@@ -26,12 +21,8 @@ import com.amazonaws.services.ec2.model.TerminateInstancesRequest;
 
 public class WorkerManager 
 {
-	private static final Tag WORKER_TAG = new Tag("type", "worker");
 	private static final String STATUS_RUNNING = "running";
-	private static final String WORKER_PORT = "8089";
 	private static final int TRY_COUNT = 3;
-	
-	
 	
 	private Configuration configuration;
 	private AmazonEC2 amazonEC2Client;
@@ -65,6 +56,38 @@ public class WorkerManager
 		}
 	}
 	
+	/**
+	 * Kills the instance with the specified public IP. If a listener
+	 * is provided in the configuration this will call its instanceTerminated() 
+	 * method. 
+	 * 
+	 * @param publicIp IP of the instance to kill. This instance should have 
+	 * the tag specified in the configuration.
+	 * @return True iff the kill request is send successfully.
+	 */
+	public boolean killInstance(String publicIp) {
+		List<Instance> runningInstances = getRunningInstances();
+		
+		Optional<Instance> instanceToKill = runningInstances.stream()
+			.filter(instance -> instance.getPublicIpAddress().equals(publicIp))
+			.findFirst();
+		
+		if (!instanceToKill.isPresent()) {
+			return false;
+		}
+		
+		TerminateInstancesRequest terminateInstancesRequest 
+			= new TerminateInstancesRequest();
+		terminateInstancesRequest.withInstanceIds(instanceToKill.get().getInstanceId());
+		
+		if (configuration.getListener() != null) {
+			configuration.getListener().instanceTerminated(publicIp);
+		}
+		
+		executeTryCount(() -> amazonEC2Client.terminateInstances(terminateInstancesRequest));
+		return true;
+	}
+	
 	public void killInstances(int numInstances) {
 		List<Instance> runningInstances = getRunningInstances();
 		
@@ -91,8 +114,11 @@ public class WorkerManager
 		System.out.println("The following instances will be "
 				+ "terminated " + instanceIpsToKill);
 		
-		if (configuration.isRegisterInstances()) {
-			instanceIpsToKill.stream().forEach(ip -> deregisterWorker(ip));
+		
+		if (configuration.getListener() != null) {
+			instanceIpsToKill
+				.stream()
+				.forEach(ip -> configuration.getListener().instanceTerminated(ip));
 		}
 		
 		executeTryCount(() -> amazonEC2Client.terminateInstances(terminateInstancesRequest));
@@ -149,8 +175,10 @@ public class WorkerManager
 			ips.add(ip);
 		}
 
-		if (configuration.isRegisterInstances()) {
-			ips.stream().forEach(ip -> registerWorker(ip));
+		if (configuration.getListener() != null) {
+			ips
+				.stream()
+				.forEach(ip -> configuration.getListener().instanceCreated(ip));
 		}
 		
 		System.out.println("The following instances were created");
@@ -166,36 +194,12 @@ public class WorkerManager
 		
 		createTagsRequest
 			.withResources(ids)
-			.withTags(WORKER_TAG);
+			.withTags(configuration.getWorkerTag());
 		
 		CreateTagsResult result = executeTryCount(() -> amazonEC2Client.createTags(createTagsRequest));
 		
 		if (result == null) {
 			System.err.println("Can't tag the new instances.");
-		}
-	}
-	
-	private void registerWorker(String workerIp) {
-		HttpClient httpclient = HttpClients.createDefault();
-		String url = configuration.getWorkerRegistryEndpoint() 
-				+ "/" + workerIp + ":" + WORKER_PORT + ".";
-		HttpPost httppost = new HttpPost(url);
-		
-		HttpResponse response = executeTryCount(() -> httpclient.execute(httppost));
-		if (response.getStatusLine().getStatusCode() >= 400) {
-			System.out.println("Error while registering worker " + workerIp);
-		}
-	}
-	
-	private void deregisterWorker(String workerIp) {
-		HttpClient httpclient = HttpClients.createDefault();
-		String url = configuration.getWorkerRegistryEndpoint() 
-				+ "/" + workerIp + ":" + WORKER_PORT + ".";
-		HttpDelete httppost = new HttpDelete(url);
-		
-		HttpResponse response = executeTryCount(() -> httpclient.execute(httppost));
-		if (response.getStatusLine().getStatusCode() >= 400) {
-			System.out.println("Error while registering worker " + workerIp);
 		}
 	}
 	
@@ -212,7 +216,7 @@ public class WorkerManager
 	    
 	    List<Instance> runningInstances = allInstances.stream()
 	    	.filter(instance -> instance.getState().getName().equals(STATUS_RUNNING))
-	    	.filter(instance -> instance.getTags().contains(WORKER_TAG))
+	    	.filter(instance -> instance.getTags().contains(configuration.getWorkerTag()))
 	    	.collect(Collectors.toList());
 	    
 	    return runningInstances;
@@ -242,6 +246,7 @@ public class WorkerManager
 			} catch (Exception e) {
 				e.printStackTrace();
 				sleep(3*1000);
+				
 			}
 			tryCount--;
 		} while (!success && tryCount > 0);
@@ -259,15 +264,28 @@ public class WorkerManager
 	
     public static void main( String[] args )
     {
+    	RunTerminateListener listener = new RunTerminateListener() {
+			@Override
+			public void instanceTerminated(String ip) {
+				System.out.println("Listener: Worker " + ip + " is terminated.");
+				
+			}
+			
+			@Override
+			public void instanceCreated(String ip) {
+				System.out.println("Listener: Worker " + ip + " is created.");
+			}
+		};
+		
     	Configuration configuration = new Configuration()
     			.setImageId("ami-a8e97fd1")
     			.setSecurityGroup("default")
-    			.setNewInstanceKeyName("test")
-    			.setWorkerRegistryEndpoint("http://localhost:8889/workers")
-    			.setRegisterInstances(true)
-    			.setInstanceType(InstanceType.T2Micro);
+    			.setSecurityKeyName("test")
+    			.setWorkerTag(new Tag("type", "worker"))
+    			.setInstanceType(InstanceType.T2Micro)
+    			.setListener(listener);
     	
     	WorkerManager manager = new WorkerManager(configuration);
-    	manager.ensureNumberOfInstances(1);
+    	manager.ensureNumberOfInstances(5);
     }
 }

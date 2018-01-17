@@ -1,12 +1,9 @@
 package org.pesho.workermanager;
 
 import com.amazonaws.services.ec2.model.InstanceType;
+import com.amazonaws.services.ec2.model.Tag;
 
 public class Configuration {
-	
-	private boolean registerInstances = true;
-	
-	private String workerRegistryEndpoint;
 	
 	private String newInstanceKeyName;
 	
@@ -15,33 +12,19 @@ public class Configuration {
 	private String securityGroup;
 	
 	private InstanceType instanceType;
+	
+	private Tag workerTag;
+	
+	private RunTerminateListener listener;
 
 	public Configuration() {
-	}
-	
-	public boolean isRegisterInstances() {
-		return registerInstances;
-	}
-
-	public Configuration setRegisterInstances(boolean registerInstances) {
-		this.registerInstances = registerInstances;
-		return this;
-	}
-
-	public String getWorkerRegistryEndpoint() {
-		return workerRegistryEndpoint;
-	}
-
-	public Configuration setWorkerRegistryEndpoint(String workerRegistryEndpoint) {
-		this.workerRegistryEndpoint = workerRegistryEndpoint;
-		return this;
 	}
 
 	public String getNewInstanceKeyName() {
 		return newInstanceKeyName;
 	}
 
-	public Configuration setNewInstanceKeyName(String newInstanceKeyName) {
+	public Configuration setSecurityKeyName(String newInstanceKeyName) {
 		this.newInstanceKeyName = newInstanceKeyName;
 		return this;
 	}
@@ -70,6 +53,30 @@ public class Configuration {
 
 	public Configuration setInstanceType(InstanceType instanceType) {
 		this.instanceType = instanceType;
+		return this;
+	}
+
+	public Tag getWorkerTag() {
+		return workerTag;
+	}
+
+	public Configuration setWorkerTag(Tag workerTag) {
+		this.workerTag = workerTag;
+		return this;
+	}
+
+	public RunTerminateListener getListener() {
+		return listener;
+	}
+
+	/**
+	 * The listener's run method instanceCreated() is called when instance 
+	 * is created and started (its status is "running").
+	 * The method instanceTerminated() is called just before terminating
+	 * a instance.
+	 */
+	public Configuration setListener(RunTerminateListener listener) {
+		this.listener = listener;
 		return this;
 	}
 }
